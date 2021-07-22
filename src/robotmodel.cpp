@@ -65,7 +65,7 @@ void CModel::Initialize()
 void CModel::load_model()
 {
 	//read urdf model
-	RigidBodyDynamics::Addons::URDFReadFromFile("/home/kist/catkin_ws/src/dual_arm/model/dualarm.urdf", &_model, false, false);		
+	RigidBodyDynamics::Addons::URDFReadFromFile("/home/kist/catkin_ws/src/dual_arm/model/dualarm.urdf", &_model, false, true);		
 
 	//body id 1: body_link (trunk)
 	//body id 8: LWrR_Link (left hand)
@@ -189,7 +189,8 @@ void CModel::set_robot_config()
 	_position_local_task_right_hand(0) = -0.017;
 	_position_local_task_right_hand(1) = -0.08;
 
-	_max_joint_torque(0) = 400.0;
+	//_max_joint_torque(0) = 400.0;
+	_max_joint_torque(0) = 0.0;
 	_max_joint_torque(1) = 85.8;
 	_max_joint_torque(2) = 85.8;
 	_max_joint_torque(3) = 76.8;

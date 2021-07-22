@@ -129,6 +129,8 @@ add_library(dual_arm_lib
   src/get_home.cpp
   src/task_controller.cpp
   src/robotmodel.cpp
+  src/trajectory.cpp
+  src/quadraticprogram.cpp
   ${catkin_LIBRARIES}
 )
 
@@ -163,6 +165,7 @@ target_link_libraries(ecat_start
   -lsoem
   -lrbdl
   -lrbdl_urdfreader
+  -lqpOASES
   -pthread
 
 )

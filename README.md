@@ -21,7 +21,7 @@ sudo ldconfig
 #### Eigen3
 
 #### RBDL 2.6.0
-> RBDL 3.0 (ORB ver is not working for this project.)
+> RBDL 2.6 (Note: ORB ver is not working for this project.)
 ```sh
 git clone https://github.com/rbdl/rbdl
 cd rbdl
@@ -34,3 +34,13 @@ sudo ldconfig
 ```
 
 #### qpOASES
+```sh
+git clone https://github.com/coin-or/qpOASES.git
+cd qpOASES
+mkdir build
+cd build
+cmake ..
+make all
+make install
+sudo ldconfig
+```

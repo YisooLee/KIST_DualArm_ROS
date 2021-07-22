@@ -49,10 +49,14 @@
 #define _2PI 6.28318530717959
 #define LOG_SIZE 50000
 
+#define NO_PRISMATIC
+
 using namespace std;
 
-float log_mem[LOG_SIZE][1+ELMO_NUM*4]; //for logging data (txt file)
+float log_mem[LOG_SIZE][1+ELMO_NUM*5]; //for logging data (read, write elmo) (txt file)
+float log_mem_ctrl[LOG_SIZE][1+ELMO_NUM*3+12]; //for logging data (data from controller) (txt file)
 int log_cnt;
+bool bool_log_ctrl = false;
 
 char IOmap[4096];
 pthread_t thread1;
@@ -79,7 +83,7 @@ double  oneRevolute_CNT[ELMO_NUM];	// encoder count * gear ratio
 double  Amp2Torq[ELMO_NUM];			// [Amp]	-> [Torque]
 double  Torq2Amp[ELMO_NUM];		// [mAmp]	<- [Torque]	
 const double set_lead = 0.005; // [m/rev]
-const double set_efficiency_lead = 1.0; // need to find 0.57
+const double set_efficiency_lead = 2.4; // need to find 0.57
 const int    set_direction[ELMO_NUM]		= {		 1,      1,       1,      1,       1,      1,       1,       1,       1,       1,       1,       1,       1,       1,       1 };	// direction CW or CCW
 const int    set_joint_type[ELMO_NUM]       = {     0,       0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      0,      1}; //joint type, 0: revolute. 1: prismatic
 const double    max_position_limit[ELMO_NUM] = {  90.0*DEG2RAD,  90.0*DEG2RAD,  90.0*DEG2RAD,  120.0*DEG2RAD,  90.0*DEG2RAD,  45.0*DEG2RAD,  60.0*DEG2RAD,  90.0*DEG2RAD,  15.0*DEG2RAD,  90.0*DEG2RAD,  30.0*DEG2RAD,  90.0*DEG2RAD,  90.0*DEG2RAD,  60.0*DEG2RAD, 0.35}; //  maximum limit degree (rad, last is m)
@@ -106,6 +110,7 @@ double  RadPsecToMPsec(double RadPsec)          {return (double)RadPsec / _2PI *
 double  mPsecToRadPsec(double mPsec)            {return (double)_2PI*mPsec/set_lead;} // [m/s] -> [Rad/s]
 double  RadPsecToCntPsec(double RadPsec, USHORT ielmo) {return (double)oneRevolute_CNT[ielmo]*RadPsec/_2PI;}; //[Rad/s] -> [Cnt/s]
 
+#pragma pack(push,1)
 // rx, tx setting
 namespace EtherCAT_Elmo
 {
@@ -144,6 +149,7 @@ namespace EtherCAT_Elmo
         };
     };
 } // namespace EtherCAT_Elmo
+#pragma pack(pop)
 
 EtherCAT_Elmo::PDO_SET::tx_SET *txPDO[ELMO_NUM];
 EtherCAT_Elmo::PDO_SET::rx_SET *rxPDO[ELMO_NUM];
@@ -177,7 +183,9 @@ double max_position_range = 0.0;
 double min_position_range = 0.0;
 
 double time_for_controller = 0.0;
-double time_period_sec = PERIOD_NS/SEC_IN_NSEC;
+double time_period_nsec = PERIOD_NS;
+double sec_in_nsec = SEC_IN_NSEC;
+double time_period_sec = time_period_nsec/sec_in_nsec;
 
 double positionOffset_rad[ELMO_NUM];
 double positionHome_rad[ELMO_NUM];
@@ -285,7 +293,7 @@ int getch(void)
    return ch;  
 }  
 
-void log_statefile() // text file open & write.
+void log_file() // text file open & write.
 {
     cout << "--------- Logging Start ---------"<<endl;
 
@@ -297,11 +305,12 @@ void log_statefile() // text file open & write.
     fout <<"q0\tq1\tq2\tq3\tq4\tq5\tq6\tq7\tq8\tq9\tq10\tq11\tq12\tq13\tq14\t";
     fout <<"qdot0\tqdot1\tqdot2\tqdot3\tqdot4\tqdot5\tqdot6\tqdot7\tqdot8\tqdot9\tqdot10\tqdot11\tqdot12\tqdot13\tqdot14\t";
     fout <<"tau0\ttau1\ttau2\ttau3\ttau4\ttau5\ttau6\ttau7\ttau8\ttau9\ttau10\ttau11\ttau12\ttau13\ttau14\t";
-    fout <<"touch0\ttouch1\ttouch2\ttouch3\ttouch4\ttouch5\ttouch6\ttouch7\ttouch8\ttouch9\ttouch10\ttouch11\ttouch12\ttouch13\ttouch14\t\n";    
+    fout <<"touch0\ttouch1\ttouch2\ttouch3\ttouch4\ttouch5\ttouch6\ttouch7\ttouch8\ttouch9\ttouch10\ttouch11\ttouch12\ttouch13\ttouch14\t";    
+    fout <<"ref0\tref1\tref2\tref3\tref4\tref5\tref6\tref7\tref8\tref9\tref10\tref11\tref12\tref13\tref14\t\n";
 
     for(int i=0; i<=log_cnt; i++)
     {        
-        for(int j=0; j<ELMO_NUM*4 + 1; j++)
+        for(int j=0; j<ELMO_NUM*5 + 1; j++)
         {
             fout<<log_mem[i][j]<<"\t";
         }
@@ -310,8 +319,34 @@ void log_statefile() // text file open & write.
     fout.close();
     cout << "<state_log.txt> Logging Complete."<<endl;
 
+    if(bool_log_ctrl == true)
+    {
+        cout << "Logging <ctrl_log.txt>"<<endl;
+        ofstream fout2;
+        cout << "Log size: [" << log_cnt <<"]["<< ELMO_NUM + 1 <<"]" <<endl;
+        fout2.open("/home/kist/catkin_ws/log/ctrl_log.txt");
+        fout2 << "time\t";
+        fout2 <<"q0\tq1\tq2\tq3\tq4\tq5\tq6\tq7\tq8\tq9\tq10\tq11\tq12\tq13\tq14\t";
+        fout2 <<"qdot0\tqdot1\tqdot2\tqdot3\tqdot4\tqdot5\tqdot6\tqdot7\tqdot8\tqdot9\tqdot10\tqdot11\tqdot12\tqdot13\tqdot14\t";
+        fout2 <<"qdes0\tqdes1\tqdes2\tqdes3\tqdes4\tqdes5\tqdes6\tqdes7\tqdes8\tqdes9\tqdes10\tqdes11\tqdes12\tqdes13\tqdes14\t";
+        fout2 <<"lhand_x\tlhand_y\tlhand_z\trhand_x\trhand_y\trhand_z\t";
+        fout2 <<"lhand_x_des\tlhand_y_des\tlhand_z_des\trhand_x_des\trhand_y_des\trhand_z_des\t\n";
+
+        for(int i=0; i<=log_cnt; i++)
+        {        
+            for(int j=0; j<ELMO_NUM*3 + 1 + 12; j++)
+            {
+                fout2<<log_mem_ctrl[i][j]<<"\t";
+            }
+            fout2 << "\t\n";
+        }
+        fout2.close();
+        cout << "<ctrl_log.txt> Logging Complete."<<endl;
+    }
+
     cout << "--------- Logging Complete ---------"<<endl<<endl;
 }
+
 
 void signal_callback_handler(int signum) {
    cout << endl << "Caught Ctrl+C " << signum << endl;
@@ -320,7 +355,7 @@ void signal_callback_handler(int signum) {
   bool_ethecat_loop = false;
   de_shutdown = true;
   
-  log_statefile();
+  log_file();
      // Terminate program
    exit(signum);
 }
@@ -352,6 +387,7 @@ void ethercat_run(char *ifname, char *mode)
     {
         cout << "Control Mode: Task Space Control with Joint Torque Control" << endl<<endl;
         control_mode = 0; //torque mode
+        bool_log_ctrl = true;
     }
     else if(strcmp(mode,"none")==0)
     {        
@@ -513,6 +549,11 @@ void ethercat_run(char *ifname, char *mode)
                         txPDO[slave - 1] = (EtherCAT_Elmo::PDO_SET::tx_SET *)(ec_slave[slave].outputs);
                         rxPDO[slave - 1] = (EtherCAT_Elmo::PDO_SET::rx_SET *)(ec_slave[slave].inputs);
                     }
+                    for (int i=0; i<ELMO_NUM; i++)
+                    {
+                        txPDO[i]->targetVelocity = (int16_t) (0); 
+                        txPDO[i]->targetTorque = (int16_t) (0); 
+                    }
 
                     positionElmo_cnt = 0;
                     positionElmo_rad = 0.0;
@@ -598,10 +639,24 @@ void ethercat_run(char *ifname, char *mode)
                                         else if(control_mode == 1)
                                         {
                                             txPDO[i-1]->modeOfOperation = EtherCAT_Elmo::CyclicSynchronousVelocitymode;
+
+                                            #ifdef NO_PRISMATIC
+                                            if(set_joint_type[i-1] == 1)
+                                            {
+                                                txPDO[i-1]->modeOfOperation = EtherCAT_Elmo::CyclicSynchronousTorquemode; //set torquemode for prismatic joint
+                                            }
+                                            #endif
                                         }
                                         else if(control_mode == 2)
                                         {
                                             txPDO[i-1]->modeOfOperation = EtherCAT_Elmo::CyclicSynchronousPositionmode;
+                                            
+                                            #ifdef NO_PRISMATIC
+                                            if(set_joint_type[i-1] == 1)
+                                            {
+                                                txPDO[i-1]->modeOfOperation = EtherCAT_Elmo::CyclicSynchronousTorquemode; //set torquemode for prismatic joint
+                                            }
+                                            #endif
                                         }
                                         else
                                         {
@@ -855,12 +910,26 @@ void ethercat_run(char *ifname, char *mode)
                                         {
                                             //target velocity (when mode of operation is CyclicSynchronousPositionmode)
                                             txPDO[i-1]->targetVelocity = (int32_t) velocityDesired_cntPsec[i-1];
-                                            //cout << i << ": " << txPDO[i-1]->targetVelocity << endl;                                                                                                
+                                            //cout << i << ": " << txPDO[i-1]->targetVelocity << endl;
+
+                                            #ifdef NO_PRISMATIC
+                                            if(set_joint_type[i-1] == 1)
+                                            {
+                                                txPDO[i-1]->targetTorque = (int16_t) (0); 
+                                            }
+                                            #endif                                                                                      
                                         }
                                         else if(control_mode == 2)
                                         {
                                             //target position (when mode of operation is CyclicSynchronousVelocitymode)
                                             txPDO[i-1]->targetPosition = (int32_t) positionDesired_cnt[i-1];
+
+                                            #ifdef NO_PRISMATIC
+                                            if(set_joint_type[i-1] == 1)
+                                            {
+                                                txPDO[i-1]->targetTorque = (int16_t) (0); 
+                                            }
+                                            #endif
                                         }                                        
 
                                         txPDO[i - 1]->maxTorque = (uint16)MAX_TORQUE;
@@ -894,7 +963,41 @@ void ethercat_run(char *ifname, char *mode)
                                     log_mem[log_cnt][1+i] = positionElmo[i];
                                     log_mem[log_cnt][1+15+i] = velocityElmo[i];
                                     log_mem[log_cnt][1+30+i] = torqueElmo[i];
-                                    log_mem[log_cnt][1+45+i] = touchState[i];                                    
+                                    log_mem[log_cnt][1+45+i] = touchState[i];       
+                                    if(control_mode == 0) //torque mode
+                                    {
+                                        log_mem[log_cnt][1+60+i] = torqueDesired[i]; 
+                                    }
+                                    else if(control_mode == 1) //velocity mode
+                                    {                                           
+                                        log_mem[log_cnt][1+60+i] = velocityDesired[i]; 
+                                    }
+                                    else if(control_mode == 2) //position mode, not working
+                                    {
+                                        log_mem[log_cnt][1+60+i] = positionDesired[i]; 
+                                    }      
+                                    else
+                                    {
+                                        log_mem[log_cnt][1+60+i] = torqueDesired[i]; 
+                                    }                               
+                                }
+
+                                if(strcmp(mode,"task")==0)
+                                {
+                                    log_mem_ctrl[log_cnt][0] = time_for_controller;
+                                    for(int i=0; i<ELMO_NUM; i++)
+                                    {
+                                        log_mem_ctrl[log_cnt][1+i] = TaskControl._q(i);
+                                        log_mem_ctrl[log_cnt][1+ELMO_NUM+i] = TaskControl._qdot_lp(i);
+                                        log_mem_ctrl[log_cnt][1+ELMO_NUM*2+i] = TaskControl._q_des(i);
+                                    }
+                                    for(int i=0; i<3; i++)
+                                    {
+                                        log_mem_ctrl[log_cnt][1+ELMO_NUM*3+i] = TaskControl._x_left_hand(i);
+                                        log_mem_ctrl[log_cnt][1+ELMO_NUM*3+3+i] = TaskControl._x_right_hand(i);
+                                        log_mem_ctrl[log_cnt][1+ELMO_NUM*3+6+i] = TaskControl._x_des_left_hand(i);
+                                        log_mem_ctrl[log_cnt][1+ELMO_NUM*3+9+i] = TaskControl._x_des_right_hand(i);
+                                    }
                                 }
 
                                 log_cnt = log_cnt + 1;

@@ -31,7 +31,9 @@ void CModel::Initialize()
 	_max_joint_velocity.setZero(_k);
 	_min_joint_velocity.setZero(_k);
 	_max_joint_position.setZero(_k);
-	_min_joint_position.setZero(_k);	
+	_min_joint_position.setZero(_k);
+	_max_ctrl_joint_torque.setZero(_k);	
+	_min_ctrl_joint_torque.setZero(_k);	
 
 	_A.setZero(_k,_k);
 	_g.setZero(_k);
@@ -189,8 +191,7 @@ void CModel::set_robot_config()
 	_position_local_task_right_hand(0) = -0.017;
 	_position_local_task_right_hand(1) = -0.08;
 
-	//_max_joint_torque(0) = 400.0;
-	_max_joint_torque(0) = 0.0;
+	_max_joint_torque(0) = 400.0;	
 	_max_joint_torque(1) = 85.8;
 	_max_joint_torque(2) = 85.8;
 	_max_joint_torque(3) = 76.8;
@@ -254,4 +255,7 @@ void CModel::set_robot_config()
 	_min_joint_position(13) = -90.0 * RAD2DEG;
 	_max_joint_position(14) = 45.0 * RAD2DEG;
 	_min_joint_position(14) = -45.0 * RAD2DEG;
+
+	_max_ctrl_joint_torque.setConstant(10.0);
+	_min_ctrl_joint_torque = -_max_ctrl_joint_torque;
 }

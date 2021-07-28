@@ -170,7 +170,7 @@ void CTaskController::motion_plan()
     _time_plan(1) = 1.0; //move home position
     _time_plan(2) = 0.5; //wait
     _time_plan(3) = 1.0; //operational space control
-    _time_plan(4) = 100000.0; //operational space control - keep position
+    _time_plan(4) = 1000000.0; //operational space control - keep position
     _time_plan(5) = 1000000.0; //gravity compensation
 
     if (_bool_plan(_cnt_plan) == 1)
@@ -384,12 +384,12 @@ void CTaskController::OperationalSpaceControl()
     _qddot_ref(0) = 0.2*(_kpj*(_q_goal(0)-_q(0)) - _kvj*_qdot_lp(0)); //prismatic joint is controlled to keep position
     //_qddot_ref(2) = 0.2*(_kpj*(_q_home(2)-_q(2)) - _kvj*_qdot_lp(2)); //for shoulder roll joint posture
     //_qddot_ref(9) = 0.2*(_kpj*(_q_home(9)-_q(9)) - _kvj*_qdot_lp(9)); //for shoulder roll joint posture
-    _A_qddot_ref.noalias() =_A*_qddot_ref;
+    _A_qddot_ref.noalias() =_A*_qddot_ref;    
     _torque_subtask.noalias() = _Null_hands * _A_qddot_ref;    
     //_torque_subtask.setZero();    
 
     safetyTorqueHat();    
-	_torque_des.noalias() = _torque_maintask + _torque_subtask + Model._bg;    
+	_torque_des.noalias() = _torque_maintask + _torque_subtask + Model._bg;        
 }
 
 void CTaskController::ReducedHQPTaskSpaceControl()
@@ -429,7 +429,7 @@ void CTaskController::ReducedHQPTaskSpaceControl()
 	_rH1.setZero();
 	for (int i = 0; i < 15; i++)
 	{
-		_rH1(i, i) = 0.0001;
+		_rH1(i, i) = 0.00001;
 	}
 	for (int i = 15; i < 27; i++)
 	{
@@ -464,8 +464,10 @@ void CTaskController::ReducedHQPTaskSpaceControl()
 	for (int i = 0; i < 15; i++)
 	{
 		//torque limit
-		_rlb1(i) = Model._min_joint_torque(i) - Model._bg(i);
-		_rub1(i) = Model._max_joint_torque(i) - Model._bg(i);
+		//_rlb1(i) = Model._min_joint_torque(i) - Model._bg(i);
+		//_rub1(i) = Model._max_joint_torque(i) - Model._bg(i);
+        _rlb1(i) = Model._min_ctrl_joint_torque(i);
+		_rub1(i) = Model._max_ctrl_joint_torque(i);
     }
 	//task limit	
 	for (int i = 0; i < 12; i++)
@@ -473,11 +475,16 @@ void CTaskController::ReducedHQPTaskSpaceControl()
 		_rlb1(i + 15) = -1000.0;
 		_rub1(i + 15) = 1000.0;
 	}
+    _rlb1(0) = 0.0 - _rHQP_threshold; //set this when prismatic is not working
+	_rub1(0) = 0.0 + _rHQP_threshold; //set this when prismatic is not working
+
 	rHQP_P1.UpdateSubjectToX(_rlb1, _rub1);
 
 	//Solve
 	rHQP_P1.EnableEqualityCondition(0.0001);
 	rHQP_P1.SolveQPoases(_max_iter);
+
+    //cout <<"HQP1"<<endl<< rHQP_P1._Xopt.segment(0, 15).transpose() << endl;
 
 	//second priority task QP ////////////////////////////////////////////////////////////////////////////////////////////////////////////////	
 	//set cost function x^T*H*x + g	
@@ -524,9 +531,13 @@ void CTaskController::ReducedHQPTaskSpaceControl()
 	//joint torque limit
 	for (int i = 0; i < 15; i++)
 	{
-		_rlb2(i) = Model._min_joint_torque(i) - Model._bg(i);
-		_rub2(i) = Model._max_joint_torque(i) - Model._bg(i);		
+		//_rlb2(i) = Model._min_joint_torque(i) - Model._bg(i);
+		//_rub2(i) = Model._max_joint_torque(i) - Model._bg(i);		
+        _rlb2(i) = Model._min_ctrl_joint_torque(i);
+		_rub2(i) = Model._max_ctrl_joint_torque(i);
 	}
+    _rlb2(0) = 0.0 - _rHQP_threshold; //set this when prismatic is not working
+	_rub2(0) = 0.0 + _rHQP_threshold; //set this when prismatic is not working
 	//task limit
 	for (int i = 0; i < 15; i++)
 	{
@@ -539,7 +550,8 @@ void CTaskController::ReducedHQPTaskSpaceControl()
 	rHQP_P2.EnableEqualityCondition(0.0001);
 	rHQP_P2.SolveQPoases(_max_iter);
 	_torque_des.noalias() = rHQP_P2._Xopt.segment(0, 15) + Model._bg;
-	//cout << _torque_des.transpose() << endl;
+	//cout <<"HQP2 " << rHQP_P2._Xopt.segment(0, 15).transpose() << endl;
+    //cout << _torque_des.transpose() << endl;
 }
 
 

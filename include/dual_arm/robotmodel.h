@@ -35,7 +35,7 @@ public:
 	Matrix3d _R_left_hand, _R_right_hand;
 	VectorCXd _xdot_left_hand, _xdot_right_hand;
 
-	VectorCXd _max_joint_torque, _min_joint_torque, _max_joint_velocity, _min_joint_velocity, _max_joint_position, _min_joint_position;
+	VectorCXd _max_joint_torque, _min_joint_torque, _max_joint_velocity, _min_joint_velocity, _max_joint_position, _min_joint_position, _max_ctrl_joint_torque, _min_ctrl_joint_torque;
 
 	int _k;//joint number
 
